@@ -1,44 +1,80 @@
 "use client";
+
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 export default function InstallButton() {
-  const [prompt, setPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [installed, setInstalled] = useState(false);
 
   useEffect(() => {
-    const handler = (e: any) => {
+    const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
-      setPrompt(e);
+      setDeferredPrompt(e);
     };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
+
+    const handleAppInstalled = () => {
+      setInstalled(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener(
+      "beforeinstallprompt",
+      handleBeforeInstallPrompt
+    );
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    // Detect if already installed (desktop)
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt
+      );
+      window.removeEventListener(
+        "appinstalled",
+        handleAppInstalled
+      );
+    };
   }, []);
 
   const installApp = async () => {
-    if (!prompt) return;
-    prompt.prompt();
-    await prompt.userChoice;
-    setPrompt(null);
+    if (!deferredPrompt) {
+      alert(
+        "App is already installed or not available for installation yet."
+      );
+      return;
+    }
+
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+
+    if (outcome === "accepted") {
+      setInstalled(true);
+    }
+
+    setDeferredPrompt(null);
   };
 
-  if (!prompt) {
-    // If no install prompt, just navigate to chat
+  if (installed) {
     return (
-      <Link
-        href="/chat"
-        className="rounded-full border px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium transition-all duration-300 hover:scale-105 bg-gradient-to-r from-[#7b5cff] to-[#ff8fd1] border-transparent text-white hover:opacity-90 cursor-pointer"
+      <button
+        disabled
+        className="rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium bg-green-500 text-white cursor-default"
       >
-        🚀 Launch App
-      </Link>
+        ✅ Installed
+      </button>
     );
   }
 
   return (
     <button
       onClick={installApp}
-      className="rounded-full border px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium transition-all duration-300 hover:scale-105 bg-gradient-to-r from-[#7b5cff] to-[#ff8fd1] border-transparent text-white hover:opacity-90 cursor-pointer"
+      className="rounded-full px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-medium transition-all duration-300 hover:scale-105 bg-gradient-to-r from-[#7b5cff] to-[#ff8fd1] text-white"
     >
-      🚀 Launch App
+      🚀 Install App
     </button>
   );
 }
