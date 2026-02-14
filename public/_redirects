@@ -1,3 +1,2 @@
-# Netlify redirects for Next.js
+# Netlify redirects for Next.js - catch all routes
 /* /index.html 200
-/api/:path 200
