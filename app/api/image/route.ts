@@ -1,110 +1,87 @@
+export const runtime = "nodejs";
+
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.A4F_API_KEY!,
+  baseURL: "https://api.a4f.co/v1",
+});
+
+const MODELS = [
+  "provider-4/flux-2-klein-4b",
+  "provider-4/sdxl-lite",
+  "provider-2/nvidia-nemotron-3-nano-30b-a3b-bf16"
+];
+
 export async function POST(req: Request) {
-  let prompt: string;
   try {
-    const body = await req.json();
-    prompt = body?.prompt ?? body?.message ?? "";
-  } catch {
-    return Response.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
+    const { prompt, size = "1024x1024" } = await req.json();
 
-  if (!prompt || typeof prompt !== "string") {
-    return Response.json(
-      { error: "Missing or invalid prompt" },
-      { status: 400 }
-    );
-  }
+    // Debug: Check if API key is loaded
+    console.log("API KEY EXISTS:", !!process.env.A4F_API_KEY);
+    console.log("API KEY VALUE:", process.env.A4F_API_KEY?.substring(0, 10) + "...");
 
-  const apiKey = process.env.OPENROUTER_API_KEY;
+    let lastError = null;
+    
+    // Try each model in order
+    for (const model of MODELS) {
+      console.log(`Trying model: ${model}`);
+      
+      try {
+        const response = await fetch("https://api.a4f.co/v1/images/generations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.A4F_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: model,
+            prompt,
+            size,
+          }),
+        });
 
-  if (!apiKey) {
-    return Response.json(
-      { error: "Missing OPENROUTER_API_KEY environment variable" },
-      { status: 500 }
-    );
-  }
+        const data = await response.json();
+        console.log(`Model ${model} response:`, JSON.stringify(data, null, 2));
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENROUTER_IMAGE_MODEL || "sourceful/riverflow-v2-fast-preview",
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      modalities: ["image"],
-    }),
-  });
+        if (!response.ok) {
+          lastError = data;
+          console.log(`Model ${model} failed, trying next...`);
+          continue;
+        }
 
-  const rawText = await response.text();
-  let result: Record<string, unknown>;
-  try {
-    result = JSON.parse(rawText);
-  } catch {
-    return Response.json(
-      { error: `OpenRouter API error (${response.status}): Invalid JSON response` },
-      { status: 500 }
-    );
-  }
+        const imageUrl = data?.data?.[0]?.url;
 
-  if (!response.ok) {
-    const errMsg =
-      (result as { error?: { message?: string } })?.error?.message ?? rawText;
-    return Response.json(
-      { error: `OpenRouter API error (${response.status}): ${errMsg}` },
-      { status: 500 }
-    );
-  }
+        if (!imageUrl) {
+          lastError = data;
+          console.log(`Model ${model} returned no image URL, trying next...`);
+          continue;
+        }
 
-  const msg = (result as { choices?: Array<{ message?: Record<string, unknown> }> })
-    ?.choices?.[0]?.message;
+        // Success!
+        return Response.json({ 
+          imageUrl,
+          model: model 
+        });
 
-  if (!msg) {
-    return Response.json(
-      { error: "No message in OpenRouter response" },
-      { status: 500 }
-    );
-  }
-
-  let imageUrl: string | undefined;
-
-  const images = msg.images as Array<{ image_url?: { url?: string } | string }> | undefined;
-  if (images?.length) {
-    const first = images[0];
-    if (typeof first?.image_url === "string") {
-      imageUrl = first.image_url;
-    } else if (first?.image_url?.url) {
-      imageUrl = first.image_url.url;
+      } catch (modelError) {
+        console.log(`Model ${model} error:`, modelError);
+        lastError = modelError;
+        continue;
+      }
     }
-  }
 
-  const content = msg.content as Array<{ type?: string; image_url?: { url?: string }; imageUrl?: { url?: string } }> | undefined;
-  if (!imageUrl && Array.isArray(content)) {
-    const imgPart = content.find(
-      (p) => p?.type === "image_url" || p?.image_url || p?.imageUrl
-    );
-    if (imgPart) {
-      imageUrl = imgPart?.image_url?.url ?? imgPart?.imageUrl?.url;
-    }
-  }
-
-  if (!imageUrl || typeof imageUrl !== "string") {
+    // All models failed
     return Response.json(
-      { error: "No image in response" },
+      { error: "All models failed", details: lastError },
+      { status: 500 }
+    );
+
+  } catch (error: any) {
+    console.error("SERVER ERROR:", error);
+    return Response.json(
+      { error: error.message },
       { status: 500 }
     );
   }
-
-  return Response.json({
-    image: imageUrl,
-  });
 }

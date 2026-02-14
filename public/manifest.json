@@ -1,0 +1,16 @@
+{
+  "name": "Fancy AI",
+  "short_name": "FancyAI",
+  "description": "AI chat and image generation app",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#7b5cff",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
